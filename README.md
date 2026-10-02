@@ -69,8 +69,9 @@ up a new import map on a full page load.
    git push origin v1.1.0
    ```
 
-   The workflow publishes it under `v1.1.0/` and creates a GitHub Release with
-   `claim-chat-assistant.js`, its source map and `claim-chat-fragments.zip`.
+   The workflow creates a GitHub Release with `claim-chat-assistant.js`, its
+   source map and `claim-chat-fragments.zip`, then re-runs itself on `main`,
+   which publishes the new version under `v1.1.0/`.
 
 Every deployment rebuilds every `v*` tag from git, so the URLs of older
 versions keep working. GitHub Pages caches files for about 10 minutes.
@@ -82,9 +83,10 @@ execute an ES module served with that type.
 ### One-time GitHub setup
 
 - *Settings → Pages → Build and deployment → Source*: **GitHub Actions**.
-- *Settings → Environments → github-pages → Deployment branches and tags*: add
-  a tag rule `v*`. By default only `main` may deploy to Pages, so a tag push
-  would otherwise fail at the deploy step.
+
+Only `main` deploys to Pages: by default, the `github-pages` environment
+rejects deployments from tags. A tag run therefore only creates the Release,
+and triggers a deployment from `main`, which rebuilds every tag.
 
 ### Build locally
 
