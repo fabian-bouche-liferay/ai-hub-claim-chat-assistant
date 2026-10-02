@@ -135,8 +135,12 @@ The agent must answer with one JSON object (Markdown code fences are tolerated):
 - A `select` value may be an option value or its label. Numbers are
   normalized, so `1 250,50` becomes `1250.5`. A date without a time gets
   `12:00`.
-- File fields are never set by the agent. The customer uses the paperclip
-  button, and the element sends `I have attached: …` as the next message.
+- File fields are never set by the agent, which only receives text. The
+  customer uses the paperclip button. For each file, the chat shows a card
+  (thumbnail for images) with one button per compatible file field, filled
+  ones marked "replace", plus Cancel. Once every file is placed or skipped,
+  the element sends one message such as `I have attached rear.jpg as Damage
+  Photo 2, invoice.pdf as Supporting Document.`
 - The form is shown only when `complete` is `true` **and** no required field is
   empty. Otherwise the missing labels are listed in the chat.
 - A reply that is not JSON is shown as plain text and applies no updates.

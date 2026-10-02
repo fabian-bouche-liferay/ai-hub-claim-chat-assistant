@@ -59,6 +59,17 @@ const STYLES = `
 	claim-chat-assistant .claim-chat-progress {
 		min-width: 12rem;
 	}
+	claim-chat-assistant .claim-chat-file {
+		max-width: 80%;
+	}
+	claim-chat-assistant .claim-chat-file-text {
+		min-width: 0;
+	}
+	claim-chat-assistant .claim-chat-thumbnail {
+		height: 4.5rem;
+		object-fit: cover;
+		width: 6rem;
+	}
 	/* Clay labels capitalize their text; field values must stay verbatim. */
 	claim-chat-assistant .claim-chat-update {
 		max-width: 100%;
@@ -342,12 +353,12 @@ class FormAdapter {
 		return option.label;
 	}
 
-	/** Puts a File into the first empty file field accepting its extension. */
-	attachFile(file) {
+	/** File fields whose accept list allows this file, filled or not. */
+	fileSlots(file) {
 		const extension = `.${(file.name.split('.').pop() || '').toLowerCase()}`;
 
-		const target = this.fields.find((field) => {
-			if (field.type !== 'file' || (field.control.files && field.control.files.length)) {
+		return this.fields.filter((field) => {
+			if (field.type !== 'file') {
 				return false;
 			}
 
@@ -355,18 +366,15 @@ class FormAdapter {
 
 			return !accept || accept.split(',').map((item) => item.trim()).includes(extension);
 		});
+	}
 
-		if (!target) {
-			return null;
-		}
-
+	/** Puts a File into the given file field, replacing any previous file. */
+	attachFileTo(field, file) {
 		const transfer = new DataTransfer();
 
 		transfer.items.add(file);
-		target.control.files = transfer.files;
-		target.control.dispatchEvent(new Event('change', {bubbles: true}));
-
-		return target;
+		field.control.files = transfer.files;
+		field.control.dispatchEvent(new Event('change', {bubbles: true}));
 	}
 }
 
@@ -661,11 +669,13 @@ class ClaimChatAssistant extends HTMLElement {
 					</form>
 				</div>
 			</section>
-			<div class="alert alert-info d-flex align-items-center justify-content-between flex-wrap" data-back role="status" hidden>
-				<span class="mr-3">Review the information below, complete it if needed, then submit your claim.</span>
-				<button class="btn btn-secondary btn-sm" type="button" data-show-chat>
-					<span class="inline-item inline-item-before">${icon('chatbot')}</span>Back to the assistant
-				</button>
+			<div class="alert alert-info d-none" data-back role="status" hidden>
+				<div class="align-items-center d-flex flex-wrap justify-content-between">
+					<span class="mr-3">Review the information below, complete it if needed, then submit your claim.</span>
+					<button class="btn btn-secondary btn-sm" type="button" data-show-chat>
+						<span class="inline-item inline-item-before">${icon('chatbot')}</span>Back to the assistant
+					</button>
+				</div>
 			</div>
 		`;
 
@@ -913,28 +923,118 @@ class ClaimChatAssistant extends HTMLElement {
 		}
 	}
 
+	/**
+	 * The agent only receives text, so the user decides which file field each
+	 * file fills. One message is sent once every file is placed or skipped.
+	 */
 	_attach(files) {
-		const attached = [];
-		const refused = [];
+		const placed = [];
+		let pending = files.length;
+
+		const done = () => {
+			pending -= 1;
+
+			if (!pending && placed.length) {
+				this._send(`I have attached ${placed.join(', ')}.`);
+			}
+		};
 
 		files.forEach((file) => {
-			const field = this.adapter.attachFile(file);
+			const slots = this.adapter.fileSlots(file);
+
+			if (!slots.length) {
+				this._bubble('note', `${file.name} cannot be attached: this file type is not accepted.`);
+				done();
+
+				return;
+			}
+
+			this._fileChoice(file, slots, (field) => {
+				if (field) {
+					placed.push(`${file.name} as ${field.label}`);
+				}
+
+				done();
+			});
+		});
+	}
+
+	_fileChoice(file, slots, onChoice) {
+		const card = document.createElement('div');
+		const body = document.createElement('div');
+		const preview = document.createElement('div');
+		const text = document.createElement('div');
+		const name = document.createElement('div');
+		const prompt = document.createElement('div');
+		const actions = document.createElement('div');
+
+		card.className = 'align-self-end card claim-chat-file mb-3';
+		body.className = 'card-body d-flex p-3';
+		preview.className = 'mr-3';
+		name.className = 'font-weight-semi-bold text-truncate';
+		name.textContent = file.name;
+		name.title = file.name;
+		prompt.className = 'mb-2 small text-secondary';
+		prompt.textContent = 'What does this file show?';
+		actions.className = 'd-flex flex-wrap';
+
+		if (file.type.startsWith('image/')) {
+			const image = document.createElement('img');
+
+			image.alt = '';
+			image.className = 'claim-chat-thumbnail rounded';
+			image.src = URL.createObjectURL(file);
+			image.addEventListener('load', () => URL.revokeObjectURL(image.src));
+			preview.appendChild(image);
+		}
+		else {
+			preview.innerHTML = `<span class="sticker sticker-light sticker-lg">${icon('document')}</span>`;
+		}
+
+		const finish = (field) => {
+			actions.remove();
+			prompt.className = 'small';
 
 			if (field) {
-				attached.push(`${file.name} (${field.label})`);
+				prompt.innerHTML = `<span class="claim-chat-update label label-success"><span class="label-item label-item-before">${icon('check')}</span><span class="label-item label-item-expand"></span></span>`;
+				prompt.querySelector('.label-item-expand').textContent = field.label;
 			}
 			else {
-				refused.push(file.name);
+				prompt.className = 'small text-secondary';
+				prompt.textContent = 'Not attached';
 			}
+
+			onChoice(field);
+		};
+
+		slots.forEach((field) => {
+			const button = document.createElement('button');
+			const filled = this.adapter.isFilled(field);
+
+			button.className = 'btn btn-outline-primary btn-sm mb-1 mr-1';
+			button.type = 'button';
+			button.textContent = filled ? `${field.label} (replace)` : field.label;
+			button.addEventListener('click', () => {
+				this.adapter.attachFileTo(field, file);
+				finish(field);
+			});
+			actions.appendChild(button);
 		});
 
-		if (refused.length) {
-			this._bubble('note', `Could not attach: ${refused.join(', ')} (no free slot for this file type).`);
-		}
+		const cancel = document.createElement('button');
 
-		if (attached.length) {
-			this._send(`I have attached: ${attached.join(', ')}.`);
-		}
+		cancel.className = 'btn btn-link btn-sm mb-1';
+		cancel.type = 'button';
+		cancel.textContent = 'Cancel';
+		cancel.addEventListener('click', () => finish(null));
+		actions.appendChild(cancel);
+
+		text.className = 'claim-chat-file-text';
+		text.append(name, prompt, actions);
+		body.append(preview, text);
+		card.appendChild(body);
+		this._append(card);
+		actions.querySelector('button').focus();
 	}
 
 	_unavailable() {
