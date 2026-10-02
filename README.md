@@ -158,9 +158,21 @@ The agent must answer with one JSON object (Markdown code fences are tolerated):
 
 ## AI Hub agent
 
-Build it in Agent Builder as `Start → LLM → End`.
+Build it in Agent Builder as `Start → LLM → End`. Variables are declared in
+**two different places**, and mixing them up is what silently drops the
+context (see "How `context` reaches the agent" below).
 
-**Input Variables**
+**Agent definition → Variables panel**
+
+- **Input Variables**: `request` only. This comma-separated field lists the
+  arguments the chatbot's Supervisor (an LLM) must fill in when it calls the
+  agent. The Supervisor only ever sees the customer's text, so any other name
+  listed here receives an empty string, and that empty value then blocks the
+  real `context` value.
+- **Output Variable**: `response`.
+
+**LLM node → Input Variables**: every value the prompt uses. These are read
+from the workflow context, where the message `context` keys land directly.
 
 ```json
 [
@@ -177,29 +189,16 @@ Build it in Agent Builder as `Start → LLM → End`.
 ]
 ```
 
-**Output Variables**: `[{"name": "response", "type": "string"}]`
+**LLM node → Output Variables**: `[{"name": "response", "type": "string"}]`
 
 **Description** (read by the chatbot's Supervisor):
 
 ```text
 Claim declaration form-filling agent. Use this agent for EVERY customer
-message.
-
-Inputs to pass on every invocation:
-- request: the customer's message, unchanged;
-- formSchema, formState, missingRequiredFields, currentDateTime, locale:
-  copy each of these context values exactly as you received them, without
-  summarizing, reformatting or omitting any of them. They are JSON strings
-  describing the form and must reach this agent intact.
-
-Its output is a JSON object consumed by a program: return it to the customer
-verbatim, with no rewording, no summary and no added text.
+message, passing the customer's message unchanged as request. Its output is a
+JSON object consumed by a program: return it to the customer verbatim, with no
+rewording, no summary and no added text.
 ```
-
-The chatbot's Supervisor receives the message `context` and forwards it to
-this agent as additional Input Variables. That is why the description names
-each variable to pass, and why the agent declares the same names in its own
-Input Variables.
 
 **User Message**
 
@@ -302,16 +301,28 @@ the Page Editor.
 
 ## Points to check with the real agent
 
-- **Context reaching the agent.** Observed on 2026-10-02 with
-  `CHATBOT_FORM_COMPLETION_FBO` / `AGENT_FORM_COMPLETION_FBO`: with the
-  context sent only as `context`, the agent behaved as if it received nothing
-  but `request`. It filled only the two field names quoted in the prompt,
-  ignored the picklists, skipped the date, and asked again for a policy number
-  already in `formState`. With "Embed Form Context in Message Text" turned on,
-  the same turns filled `claimType`, `insuredAsset` and `incidentDateTime`, and
-  stopped asking for known values. The SSE stream showed a single LLM node
-  event and no Supervisor step. Keep the option on until the `context` →
-  Input Variables path is confirmed in the agent's own trace.
+- **How `context` reaches the agent.** Read in the AI Hub source
+  (`liferay-aihub-workspace`, 2026-10-02):
+  1. `MessageResourceImpl` invokes the `L_SUPERVISOR` agent with
+     `input = context keys + request`.
+  2. `SupervisorAgentImpl` gives the LangChain4j Supervisor only `request`
+     (`invokeWithAgenticScope(request)`). The Supervisor never sees the
+     `context` keys.
+  3. `InternalAgentImpl.invoke` builds the sub-agent's workflow context in
+     two passes. First, every name in the agent definition's Input Variables
+     gets the value the Supervisor supplied, or `""` when it supplied none.
+     Then every key of the original `input` is added, **unless the key is
+     already there**.
+  4. Each node reads its own Input Variables from that workflow context
+     (`VariablesUtil.getInputVariables`), with `""` for a missing key.
+
+  So a `context` key listed in the agent definition's Input Variables is
+  overwritten by the Supervisor's empty argument. That is what the sentinel
+  probe of 2026-10-02 showed: no value, and no literal `{{...}}` either. With
+  only `request` listed there, the `context` keys pass straight through to the
+  nodes. "Embed Form Context in Message Text" can then be turned off, which
+  also takes the schema out of the Supervisor's own prompt and should cut the
+  response time towards the 12-17 s measured without embedded context.
 - **Verbatim output.** The Supervisor may rephrase the agent's answer. Check
   the raw `Chat Message Sent` payload in DevTools; if the JSON is reworded, make
   the description stricter. A non-JSON answer still shows in the chat, but it
