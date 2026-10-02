@@ -117,7 +117,11 @@ flat into the agent's input map, next to `request`:
 | `formSchema` | JSON array of the non-file fields: `name`, `label`, `type`, `required` (only when true), `helpText` (only when present), `options` as `"value=Label"` strings (just `"value"` when both are equal) |
 | `formState` | JSON object of the values currently in the form; an attached file appears as its file name |
 | `missingRequiredFields` | JSON array of required field names still empty |
+| `today` | the date and time spelled out, e.g. `Today is Friday, October 2, 2026 at 12:40 (Europe/Paris, UTC+02:00).` When the context is embedded in the text, this is the first line of the `[FORM CONTEXT]` block |
+| `currentDate` | the visitor's local date, `YYYY-MM-DD` |
 | `currentDateTime` | the visitor's local date and time, `YYYY-MM-DDTHH:mm` |
+| `currentDayOfWeek` | e.g. `Friday` |
+| `timeZone` | IANA zone and offset, e.g. `Europe/Paris (UTC+02:00)` |
 | `locale` | page language |
 
 The agent must answer with one JSON object (Markdown code fences are tolerated):
@@ -164,7 +168,11 @@ Build it in Agent Builder as `Start → LLM → End`.
 	{"name": "formSchema", "type": "string"},
 	{"name": "formState", "type": "string"},
 	{"name": "missingRequiredFields", "type": "string"},
+	{"name": "today", "type": "string"},
+	{"name": "currentDate", "type": "string"},
 	{"name": "currentDateTime", "type": "string"},
+	{"name": "currentDayOfWeek", "type": "string"},
+	{"name": "timeZone", "type": "string"},
 	{"name": "locale", "type": "string"}
 ]
 ```
@@ -208,7 +216,7 @@ Values currently in the form (JSON):
 Required fields still empty before this turn (JSON):
 {{missingRequiredFields}}
 
-Customer local date and time: {{currentDateTime}} (locale: {{locale}})
+{{today}} Local date and time: {{currentDateTime}}, {{currentDayOfWeek}}, time zone {{timeZone}} (locale: {{locale}})
 ```
 
 **Prompt**
@@ -229,8 +237,10 @@ INPUTS
   already known: the customer may have edited the form directly. Attached
   files appear there as their file name.
 - The required fields still empty before this turn.
-- The customer's local date and time, to resolve relative dates such as
-  "yesterday evening" or "last Monday".
+- The customer's local date, time, day of the week and time zone (the line
+  starting "Today is"). Always use it to resolve relative dates and times
+  such as "yesterday evening", "this morning" or "last Monday", and write the
+  result in local time.
 
 HOW TO FILL THE FORM
 1. Extract every value you can from the customer message. Do not ask again for

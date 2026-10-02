@@ -862,9 +862,28 @@ class ClaimChatAssistant extends HTMLElement {
 	_context() {
 		const now = new Date();
 		const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+		const offset = -now.getTimezoneOffset();
+		const utcOffset = `UTC${offset >= 0 ? '+' : '-'}${String(Math.floor(Math.abs(offset) / 60)).padStart(2, '0')}:${String(Math.abs(offset) % 60).padStart(2, '0')}`;
+		const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || utcOffset;
+
+		// Spelled out in English on purpose: the LLM resolves "yesterday" or
+		// "last Monday" far more reliably from this than from a bare ISO value.
+		const today = new Intl.DateTimeFormat('en-US', {
+			day: 'numeric',
+			hour: '2-digit',
+			hourCycle: 'h23',
+			minute: '2-digit',
+			month: 'long',
+			weekday: 'long',
+			year: 'numeric',
+		}).format(now);
 
 		return {
+			currentDate: local.slice(0, 10),
 			currentDateTime: local,
+			currentDayOfWeek: new Intl.DateTimeFormat('en-US', {weekday: 'long'}).format(now),
+			timeZone: `${timeZone} (${utcOffset})`,
+			today: `Today is ${today} (${timeZone}, ${utcOffset}).`,
 			formSchema: JSON.stringify(this.adapter.schema()),
 			formState: JSON.stringify(this.adapter.state()),
 			locale: document.documentElement.lang || navigator.language,
@@ -905,7 +924,9 @@ class ClaimChatAssistant extends HTMLElement {
 		let messageText = text;
 
 		if (this.getAttribute('embed-context-in-message') === 'true') {
-			messageText = `${text}\n\n[FORM CONTEXT]\n${Object.entries(context)
+			const {today, ...rest} = context;
+
+			messageText = `${text}\n\n[FORM CONTEXT]\n${today}\n${Object.entries(rest)
 				.map(([key, value]) => `${key}: ${value}`)
 				.join('\n')}`;
 		}
