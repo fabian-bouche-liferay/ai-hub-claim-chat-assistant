@@ -114,8 +114,8 @@ flat into the agent's input map, next to `request`:
 
 | Key | Content |
 | --- | --- |
-| `formSchema` | JSON array of the fields described above, plus `format` hints |
-| `formState` | JSON object of the values currently in the form |
+| `formSchema` | JSON array of the non-file fields: `name`, `label`, `type`, `required` (only when true), `helpText` (only when present), `options` as `"value=Label"` strings (just `"value"` when both are equal) |
+| `formState` | JSON object of the values currently in the form; an attached file appears as its file name |
 | `missingRequiredFields` | JSON array of required field names still empty |
 | `currentDateTime` | the visitor's local date and time, `YYYY-MM-DDTHH:mm` |
 | `locale` | page language |
@@ -135,12 +135,19 @@ The agent must answer with one JSON object (Markdown code fences are tolerated):
 - A `select` value may be an option value or its label. Numbers are
   normalized, so `1 250,50` becomes `1250.5`. A date without a time gets
   `12:00`.
-- File fields are never set by the agent, which only receives text. The
-  customer uses the paperclip button. For each file, the chat shows a card
-  (thumbnail for images) with one button per compatible file field, filled
-  ones marked "replace", plus Cancel. Once every file is placed or skipped,
-  the element sends one message such as `I have attached rear.jpg as Damage
-  Photo 2, invoice.pdf as Supporting Document.`
+- The schema is kept compact on purpose: it is sent on every turn, and its
+  size drives the response time. Measured on 2026-10-02 with the context
+  embedded in the message text: about 40-45 s per turn with the full schema
+  (3,560 characters), 22-32 s with a compact one (1,379), 12-17 s with none.
+- File fields are not in the schema and are never set by the agent, which
+  cannot analyze files. The customer uses the paperclip button. For each file,
+  the chat shows a card (thumbnail for images) with one button per compatible
+  file field, filled ones marked "replace", plus Cancel. Nothing is sent to the
+  agent: the file name shows up in `formState` with the next message.
+- Quick replies (`suggestions`) do not send anything. Each click toggles a
+  selection, several can be selected, and they are sent together with the
+  typed text, for example `Auto Accident, Vehicle. It happened last night.`
+  The text box stays usable while the agent answers; only Send waits.
 - The form is shown only when `complete` is `true` **and** no required field is
   empty. Otherwise the missing labels are listed in the chat.
 - A reply that is not JSON is shown as plain text and applies no updates.
@@ -215,10 +222,12 @@ everything is collected, the customer reviews it and submits it.
 INPUTS
 - The customer message.
 - The form schema: one entry per field with name, label, type (text,
-  long-text, select, date-time, number, boolean, file), required, an optional
-  format, options (select only: value and label) and helpText.
+  long-text, select, date-time, number, boolean), required (present only when
+  true), an optional helpText, and for select fields options written
+  "value=Label", or just "value" when value and label are the same.
 - The values currently in the form. This is the source of truth for what is
-  already known: the customer may have edited the form directly.
+  already known: the customer may have edited the form directly. Attached
+  files appear there as their file name.
 - The required fields still empty before this turn.
 - The customer's local date and time, to resolve relative dates such as
   "yesterday evening" or "last Monday".
@@ -228,7 +237,8 @@ HOW TO FILL THE FORM
    something already in the form, unless the customer contradicts it; then
    update it.
 2. Only use field names that exist in the schema. Respect each field's type:
-   - select: exactly one of options[].value;
+   - select: exactly one option value, the part before "=" (or the whole
+     option when it has no "=");
    - date-time: YYYY-MM-DDTHH:mm, local time;
    - number: digits with a dot as decimal separator, no currency symbol;
    - boolean: true or false;
@@ -237,10 +247,11 @@ HOW TO FILL THE FORM
 4. Write claimSummary yourself: a short, factual title of at most 80
    characters. Write incidentDescription as a clear, factual account based on
    what the customer said. Use the customer's language.
-5. File fields (handledBy "attachmentButton") are never part of fieldUpdates.
-   When it is relevant (photos of the damage, police report, invoice or
-   quote), invite the customer once to attach them with the paperclip button.
-   When the customer says files were attached, acknowledge it.
+5. Files are not part of the schema and never part of fieldUpdates: you
+   cannot see or analyze them. When it is relevant (photos of the damage,
+   police report, invoice or quote), invite the customer once to attach them
+   with the paperclip button. Do not ask again once file names appear in the
+   form values.
 
 HOW TO LEAD THE CONVERSATION
 6. Ask at most two questions per turn, grouped logically, for example the
@@ -253,7 +264,9 @@ HOW TO LEAD THE CONVERSATION
    number, phone and preferred contact method. Do not insist on an optional
    detail the customer does not know or does not want to give.
 8. When a question is about a select field, put the labels of its options in
-   suggestions. For a yes/no question, suggest "Yes" and "No".
+   suggestions. For a yes/no question, suggest "Yes" and "No". The customer
+   may pick several suggestions and add text in the same message, for
+   example "Auto Accident, Vehicle. It happened last night": read all of it.
 9. Be warm and concise. Acknowledge what happened before asking anything.
    Reply in the customer's language.
 10. Set complete to true only when no required field is empty after your
