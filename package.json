@@ -1,0 +1,13 @@
+{
+	"name": "ai-hub-claim-chat-assistant",
+	"version": "1.0.0",
+	"private": true,
+	"description": "Conversational form-filling assistant for Liferay Form Containers, backed by an AI Hub chatbot",
+	"type": "module",
+	"scripts": {
+		"build": "node scripts/build-site.mjs"
+	},
+	"devDependencies": {
+		"esbuild": "^0.25.0"
+	}
+}

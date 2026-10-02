@@ -1,0 +1,40 @@
+{
+	"fieldSets": [
+		{
+			"label": "AI Hub",
+			"fields": [
+				{
+					"dataType": "string",
+					"defaultValue": "",
+					"description": "external-reference-code-of-the-ai-hub-chatbot",
+					"label": "Chatbot External Reference Code",
+					"name": "chatbotExternalReferenceCode",
+					"type": "text"
+				},
+				{
+					"dataType": "string",
+					"defaultValue": "https://ai.hub.liferay.com",
+					"description": "ai-hub-origin",
+					"label": "AI Hub URL",
+					"name": "aiHubURL",
+					"type": "text"
+				},
+				{
+					"dataType": "string",
+					"defaultValue": "Hello! I'm here to help you declare your claim. Tell me in your own words what happened.",
+					"description": "first-message-shown-by-the-assistant",
+					"label": "Welcome Message",
+					"name": "welcomeMessage",
+					"type": "text"
+				},
+				{
+					"defaultValue": false,
+					"description": "also-send-the-form-context-inside-the-message-text",
+					"label": "Embed Form Context in Message Text",
+					"name": "embedContextInMessage",
+					"type": "checkbox"
+				}
+			]
+		}
+	]
+}

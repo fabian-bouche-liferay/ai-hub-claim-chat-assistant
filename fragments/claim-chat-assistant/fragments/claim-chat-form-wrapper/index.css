@@ -1,0 +1,11 @@
+.claim-chat-form-wrapper [data-claim-chat-form-zone][hidden] {
+	display: none !important;
+}
+
+.claim-chat-form-wrapper__edit-hint {
+	border: 1px dashed var(--gray-400, #cdced9);
+	border-radius: 8px;
+	color: var(--gray-600, #6b6c7e);
+	margin-bottom: 1rem;
+	padding: 0.75rem 1rem;
+}

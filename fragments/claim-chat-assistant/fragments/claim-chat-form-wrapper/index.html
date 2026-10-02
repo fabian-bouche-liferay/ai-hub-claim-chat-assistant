@@ -1,0 +1,20 @@
+<div class="claim-chat-form-wrapper" data-claim-chat-wrapper>
+	[#if layoutMode == "edit"]
+		<p class="claim-chat-form-wrapper__edit-hint">
+			Claim assistant: drop the Form Container below. Visitors see the conversational assistant first, then this form, pre-filled.
+			[#if !configuration.chatbotExternalReferenceCode?has_content]
+				<strong>No chatbot configured yet: visitors will see the plain form.</strong>
+			[/#if]
+		</p>
+	[#else]
+		<claim-chat-assistant
+			ai-hub-url="${(configuration.aiHubURL?has_content)?then(configuration.aiHubURL, 'https://ai.hub.liferay.com')?html}"
+			chatbot-external-reference-code="${configuration.chatbotExternalReferenceCode?html}"
+			embed-context-in-message="${configuration.embedContextInMessage?is_boolean?then(configuration.embedContextInMessage?c, configuration.embedContextInMessage)}"
+			[#if configuration.welcomeMessage?has_content]welcome-message="${configuration.welcomeMessage?html}"[/#if]
+		></claim-chat-assistant>
+	[/#if]
+	<div class="claim-chat-form-wrapper__form" data-claim-chat-form-zone>
+		<lfr-drop-zone id="form-zone"></lfr-drop-zone>
+	</div>
+</div>
