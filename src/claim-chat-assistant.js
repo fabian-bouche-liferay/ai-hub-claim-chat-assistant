@@ -30,14 +30,6 @@ const DEFAULT_WELCOME =
 const FIELD_PREFIX = 'ObjectField_';
 const REPLY_TIMEOUT_MS = 90000;
 
-const FORMAT_HINTS = {
-	'boolean': 'true or false',
-	'date': 'YYYY-MM-DD',
-	'date-time': 'YYYY-MM-DDTHH:mm, local time',
-	'number': 'number with a dot as decimal separator, no currency symbol',
-	'select': 'one of options[].value',
-};
-
 // Layout only: every visual style comes from the Clay CSS already loaded by
 // the theme. Scoped to the element's tag, injected once per page.
 const STYLES = `
@@ -53,8 +45,10 @@ const STYLES = `
 		white-space: pre-wrap;
 	}
 	claim-chat-assistant .claim-chat-input {
+		max-height: 12rem;
 		min-height: 2.5rem;
-		resize: vertical;
+		overflow-y: hidden;
+		resize: none;
 	}
 	claim-chat-assistant .claim-chat-progress {
 		min-width: 12rem;
@@ -197,29 +191,33 @@ class FormAdapter {
 		return this.fields.find((field) => field.name === name);
 	}
 
+	/**
+	 * Compact on purpose: every turn sends it to the LLM, and its size drives
+	 * the response time. File fields are left out (the agent cannot handle
+	 * files); formats are stated in the agent's prompt.
+	 */
 	schema() {
-		return this.fields.map((field) => {
-			const entry = {label: field.label, name: field.name, required: field.required, type: field.type};
+		return this.fields
+			.filter((field) => field.type !== 'file')
+			.map((field) => {
+				const entry = {label: field.label, name: field.name, type: field.type};
 
-			if (field.helpText) {
-				entry.helpText = field.helpText;
-			}
+				if (field.required) {
+					entry.required = true;
+				}
 
-			if (field.options.length) {
-				entry.options = field.options;
-			}
+				if (field.helpText) {
+					entry.helpText = field.helpText;
+				}
 
-			if (FORMAT_HINTS[field.type]) {
-				entry.format = FORMAT_HINTS[field.type];
-			}
+				if (field.options.length) {
+					entry.options = field.options.map((option) =>
+						option.label === option.value ? option.value : `${option.value}=${option.label}`
+					);
+				}
 
-			if (field.type === 'file') {
-				entry.handledBy = 'attachmentButton';
-				entry.accept = field.control.getAttribute('accept') || '';
-			}
-
-			return entry;
-		});
+				return entry;
+			});
 	}
 
 	getValue(field) {
@@ -686,6 +684,8 @@ class ClaimChatAssistant extends HTMLElement {
 			this._submitInput();
 		});
 
+		this.$('[data-input]').addEventListener('input', () => this._autoGrow());
+
 		this.$('[data-input]').addEventListener('keydown', (event) => {
 			if (event.key === 'Enter' && !event.shiftKey) {
 				event.preventDefault();
@@ -714,6 +714,22 @@ class ClaimChatAssistant extends HTMLElement {
 	_setVisible(element, visible) {
 		element.hidden = !visible;
 		element.classList.toggle('d-none', !visible);
+	}
+
+	/**
+	 * Grows the text box with its content up to the CSS max-height, then
+	 * scrolls. Clay's form-control has a fixed height, hence the inline one.
+	 */
+	_autoGrow() {
+		const input = this.$('[data-input]');
+		const maxHeight = parseFloat(getComputedStyle(input).maxHeight) || Infinity;
+
+		input.style.height = 'auto';
+
+		const height = Math.min(input.scrollHeight + input.offsetHeight - input.clientHeight, maxHeight);
+
+		input.style.height = `${height}px`;
+		input.style.overflowY = input.scrollHeight > input.clientHeight ? 'auto' : 'hidden';
 	}
 
 	_showChat() {
@@ -782,9 +798,14 @@ class ClaimChatAssistant extends HTMLElement {
 		this._append(container);
 	}
 
+	/**
+	 * Quick replies do not send anything: each click toggles a selection, and
+	 * the selections go out with the typed text when the customer sends.
+	 */
 	_setSuggestions(suggestions) {
 		const container = this.$('[data-suggestions]');
 
+		this.selected = [];
 		container.textContent = '';
 		suggestions.slice(0, 8).forEach((suggestion) => {
 			const button = document.createElement('button');
@@ -792,7 +813,18 @@ class ClaimChatAssistant extends HTMLElement {
 			button.className = 'btn btn-outline-primary btn-sm mb-2 mr-2';
 			button.type = 'button';
 			button.textContent = suggestion;
-			button.addEventListener('click', () => this._send(suggestion));
+			button.setAttribute('aria-pressed', 'false');
+			button.addEventListener('click', () => {
+				const pressed = !this.selected.includes(suggestion);
+
+				this.selected = pressed
+					? [...this.selected, suggestion]
+					: this.selected.filter((item) => item !== suggestion);
+				button.setAttribute('aria-pressed', String(pressed));
+				button.classList.toggle('btn-primary', pressed);
+				button.classList.toggle('btn-outline-primary', !pressed);
+				this.$('[data-input]').focus();
+			});
 			container.appendChild(button);
 		});
 	}
@@ -811,7 +843,6 @@ class ClaimChatAssistant extends HTMLElement {
 	_setBusy(busy) {
 		this.busy = busy;
 		this.$('[data-send]').disabled = busy;
-		this.$('[data-input]').disabled = busy;
 
 		if (busy) {
 			const typing = document.createElement('div');
@@ -843,12 +874,26 @@ class ClaimChatAssistant extends HTMLElement {
 
 	_submitInput() {
 		const input = this.$('[data-input]');
-		const text = input.value.trim();
+		const typed = input.value.trim();
+		const selected = this.selected || [];
 
-		if (text && !this.busy) {
-			input.value = '';
-			this._send(text);
+		if (this.busy || (!typed && !selected.length)) {
+			return;
 		}
+
+		const parts = [];
+
+		if (selected.length) {
+			parts.push(selected.join(', '));
+		}
+
+		if (typed) {
+			parts.push(typed);
+		}
+
+		input.value = '';
+		this._autoGrow();
+		this._send(parts.join('. '));
 	}
 
 	async _send(text) {
@@ -924,20 +969,12 @@ class ClaimChatAssistant extends HTMLElement {
 	}
 
 	/**
-	 * The agent only receives text, so the user decides which file field each
-	 * file fills. One message is sent once every file is placed or skipped.
+	 * The user decides which file field each file fills. Nothing is sent to
+	 * the agent, which cannot analyze files: the next message's formState
+	 * lists the attached file names.
 	 */
 	_attach(files) {
-		const placed = [];
-		let pending = files.length;
-
-		const done = () => {
-			pending -= 1;
-
-			if (!pending && placed.length) {
-				this._send(`I have attached ${placed.join(', ')}.`);
-			}
-		};
+		const done = () => this._updateProgress();
 
 		files.forEach((file) => {
 			const slots = this.adapter.fileSlots(file);
@@ -949,13 +986,7 @@ class ClaimChatAssistant extends HTMLElement {
 				return;
 			}
 
-			this._fileChoice(file, slots, (field) => {
-				if (field) {
-					placed.push(`${file.name} as ${field.label}`);
-				}
-
-				done();
-			});
+			this._fileChoice(file, slots, done);
 		});
 	}
 
